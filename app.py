@@ -11,6 +11,10 @@ import random
 app = Flask(__name__)
 CORS(app)
 
+@app.route('/calculate', methods=['POST'])
+def calculate():
+    return {"results" : "ok"}
+
 # --- 유틸리티 함수 ---
 def is_visible(p1, p2, polygon_space: Polygon | MultiPolygon):
     """점 p1과 p2 사이의 시야가 polygon_space에 의해 막히지 않는지 확인"""
@@ -175,4 +179,5 @@ def calculate_guards():
         return jsonify({"error": "Calculation failed due to an internal error."}), 500
 
 if __name__ == '__main__':
+
     app.run(debug=True, port=5000)
