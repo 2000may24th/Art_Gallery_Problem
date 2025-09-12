@@ -143,6 +143,7 @@ calculateBtn.addEventListener('click', async () => {
             throw new Error(err.error || '알 수 없는 서버 오류');
         }
         resultData = await response.json();
+        console.log('서버로부터 받은 데이터:', resultData); 
         statusElem.textContent = `계산 완료! ${resultData.guards.length}명의 경비원이 배치되었습니다.`;
         draw();
     } catch (error) {
@@ -202,5 +203,6 @@ function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) { /* 이전�
     ctx.fillStyle = color; ctx.fill();
 
 }
+
 
 
