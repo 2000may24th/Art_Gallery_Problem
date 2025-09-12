@@ -1,0 +1,7 @@
+Flask
+Flask-Cors
+numpy
+shapely
+pulp
+triangle
+gunicorn
