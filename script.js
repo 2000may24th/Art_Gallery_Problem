@@ -108,7 +108,7 @@ randomBtn.addEventListener('click', async () => {
     resetBtn.click(); // 모든 것 초기화
     statusElem.textContent = "랜덤 도형 생성 중...";
     try {
-        const response = await fetch('http://127.0.0.1:5000/generate_random');
+        const response = await fetch('https://art-gallery-problem.onrender.com/generate_random');
         if (!response.ok) throw new Error('서버에서 랜덤 도형을 생성하지 못했습니다.');
         const data = await response.json();
         exteriorPaths = data.exteriors;
@@ -131,7 +131,7 @@ calculateBtn.addEventListener('click', async () => {
 
     statusElem.textContent = "계산 중... 복잡한 도형은 시간이 걸릴 수 있습니다.";
     try {
-        const response = await fetch('http://127.0.0.1:5000/calculate', {
+        const response = await fetch('https://art-gallery-problem.onrender.com/calculate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ exteriors: exteriorPaths, interiors: interiorPaths }),
@@ -198,4 +198,5 @@ function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) { /* 이전�
     ctx.lineTo(cx, cy - outerRadius); ctx.closePath();
     ctx.lineWidth = 2; ctx.strokeStyle = 'black'; ctx.stroke();
     ctx.fillStyle = color; ctx.fill();
+
 }
