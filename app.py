@@ -74,6 +74,7 @@ def calculate_guards():
         total_interior = unary_union(interior_polygons)
         
         final_space = total_exterior.difference(total_interior)
+        final_space = final_space.buffer(0)
 
         if final_space.is_empty:
              return jsonify({"error": "The final shape is empty."}), 400
@@ -158,3 +159,4 @@ def calculate_guards():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
