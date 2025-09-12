@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Art Gallery Problem Solver</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Art Gallery Problem - 복합 공간 경비원 배치</h1>
+    <div class="main-controls">
+        <button id="randomBtn">🎲 랜덤 생성</button>
+        <button id="calculateBtn">👮‍♂️ 경비원 배치 계산</button>
+        <button id="resetBtn">🔄 전체 초기화</button>
+    </div>
+    <div class="drawing-controls">
+        <div class="mode-selector">
+            <strong>그리기 모드:</strong>
+            <label><input type="radio" name="mode" value="exterior" checked> 공간 그리기</label>
+            <label><input type="radio" name="mode" value="interior"> 기둥 그리기</label>
+        </div>
+        <button id="finishPathBtn">✅ 현재 도형 확정</button>
+    </div>
+    <p id="status">모드를 선택하고 캔버스에 클릭하여 도형을 그리세요. '도형 확정'으로 저장 후 계산하세요.</p>
+    <canvas id="mainCanvas" width="800" height="600"></canvas>
+    <script src="script.js"></script>
+</body>
+</html>
