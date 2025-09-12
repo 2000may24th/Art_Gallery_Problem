@@ -173,6 +173,7 @@ def calculate_guards():
             })
 
         return jsonify({"guards": guard_details, "final_space": final_space_coords})
+        print("Data being sent to frontend:", response_data)
 
     except Exception:
         traceback.print_exc()
@@ -181,3 +182,4 @@ def calculate_guards():
 if __name__ == '__main__':
 
     app.run(debug=True, port=5000)
+
