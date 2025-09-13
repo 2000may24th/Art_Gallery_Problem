@@ -11,4 +11,22 @@ button:hover { background-color: #0056b3; }
 #finishPathBtn { background-color: #ffc107; color: black; }
 #finishPathBtn:hover { background-color: #e0a800; }
 .mode-selector { background-color: #e9ecef; padding: 8px 12px; border-radius: 8px; border: 1px solid #ced4da; }
+
 #status { font-size: 14px; color: #555; height: 20px; text-align: center; }
+
+/* 주의사항 스타일 */
+.notice {
+    max-width: 800px; /* 캔버스 너비와 맞춤 */
+    margin: 20px auto; /* 위아래 여백 추가 및 가운데 정렬 */
+    padding: 15px;
+    background-color: #fffbe6; /* 눈에 띄는 부드러운 배경색 */
+    border: 1px solid #ffe58f;
+    border-radius: 8px;
+    font-size: 0.9em;
+    color: #8a6d3b; /* 가독성 좋은 텍스트 색상 */
+    text-align: left; /* 긴 글이므로 왼쪽 정렬 */
+    line-height: 1.6;
+}
+.notice p {
+    margin: 0;
+}
