@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Art Gallery Problem - 복합 공간 경비원 배치</h1>
+    <h1>Art Gallery Problem - 공간 내 경비원 배치(Set Cover) 최적화 문제 </h1>
     <div class="main-controls">
         <button id="randomBtn">🎲 랜덤 생성</button>
         <button id="calculateBtn">👮‍♂️ 경비원 배치 계산</button>
@@ -22,6 +22,13 @@
     </div>
     <p id="status">모드를 선택하고 캔버스에 클릭하여 도형을 그리세요. '도형 확정'으로 저장 후 계산하세요.</p>
     <canvas id="mainCanvas" width="800" height="600"></canvas>
+
+    <!-- 추가된 주의사항 -->
+    <div class="notice">
+        <p><strong>⚠️ 주의사항:</strong> 매우 작거나 얇은 삼각형 형태의 기둥(Hole)은 컴퓨터의 부동소수점 연산 과정에서 발생하는 미세한 오차로 인해 간혹 인식되지 않을 수 있습니다. 기둥의 크기를 약간 키우거나 형태를 조금 변경한 후 다시 시도해 보세요.</p>
+    </div>
+    
     <script src="script.js"></script>
 </body>
+
 </html>
