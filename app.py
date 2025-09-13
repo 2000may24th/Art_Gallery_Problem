@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
-from shapely.geometry import Polygon, MultiPolygon, LineString, Point
+from shapely.geometry import Polygon, MultiPolygon, LineString
 from shapely.ops import unary_union
 import pulp
 import triangle as tr
@@ -13,11 +13,13 @@ CORS(app)
 
 # --- 유틸리티 함수 ---
 def is_visible(p1, p2, polygon_space: Polygon | MultiPolygon):
-    """점 p1과 p2 사이의 시야가 polygon_space에 의해 막히지 않는지 확인"""
+    """
+    점 p1과 p2 사이의 시야가 polygon_space 내부에 완전히 포함되는지 확인합니다.
+    기존의 covers는 경계에 닿는 것을 허용하지 않아 문제가 될 수 있으므로 contains로 변경합니다.
+    """
     line = LineString([p1, p2])
-    if polygon_space.geom_type == 'MultiPolygon':
-        return any(p.covers(line) for p in polygon_space.geoms)
-    return polygon_space.covers(line)
+    # contains는 선이 공간 내부에 있거나 경계에 닿는 것을 허용하여 더 안정적입니다.
+    return polygon_space.contains(line)
 
 def random_simple_polygon(n_vertices: int, cx=0, cy=0, avg_radius=150, irregularity=0.5):
     """자연스러운 무작위 단순 다각형 생성"""
@@ -42,7 +44,8 @@ def generate_random():
             while attempts < 50:
                 cx, cy = random.uniform(min_x, max_x), random.uniform(min_y, max_y)
                 hole = random_simple_polygon(random.randint(4, 7), cx, cy, 50, 0.4)
-                if exterior.contains(hole):
+                # 생성된 구멍이 다른 구멍과 겹치지 않고 외부에 포함되는지 확인
+                if exterior.contains(hole) and not any(h.intersects(hole) for h in interiors):
                     interiors.append(hole)
                     break
                 attempts += 1
@@ -82,7 +85,7 @@ def calculate_guards():
         # --- Triangle 입력 준비 ---
         all_vertices = []
         all_segments = []
-        hole_points = []
+        holes_for_triangulation = []
 
         def process_exterior_ring(coords):
             nonlocal all_vertices, all_segments
@@ -97,34 +100,34 @@ def calculate_guards():
         for poly in polygons_to_process:
             process_exterior_ring(poly.exterior.coords)
             for interior_ring in poly.interiors:
-                hole_poly = Polygon(interior_ring).buffer(0)
-                rep = hole_poly.representative_point()
-                if final_space.contains(rep):
-                    hole_points.append((rep.x, rep.y))
-                else:
-                    # centroid fallback
-                    c = hole_poly.centroid
-                    if final_space.contains(c):
-                        hole_points.append((c.x, c.y))
+                # ★★★★★ 주요 수정 사항 1 ★★★★★
+                # 구멍(hole)을 삼각 분할 라이브러리에 전달하려면, 구멍의 내부에 있는 점을 지정해야 합니다.
+                # 기존 코드는 'final_space'에 점이 포함되는지 잘못 확인하고 있었습니다.
+                # 구멍은 final_space에서 제외된 영역이므로 이 조건은 항상 거짓이 됩니다.
+                # 따라서 조건 확인 없이 각 구멍 내부의 대표점만 수집하면 됩니다.
+                hole_poly = Polygon(interior_ring)
+                holes_for_triangulation.append(hole_poly.representative_point().coords[0])
 
         polygon_data = {
             "vertices": np.array(all_vertices, dtype=float),
             "segments": np.array(all_segments, dtype=int)
         }
-        if hole_points:
-            polygon_data["holes"] = np.array(hole_points, dtype=float)
+        if holes_for_triangulation:
+            polygon_data["holes"] = np.array(holes_for_triangulation, dtype=float)
 
         # --- Triangulate ---
-        triangulation = tr.triangulate(polygon_data, 'p')
-        if not triangulation or 'triangles' not in triangulation or 'vertices' not in triangulation:
-            return jsonify({"error": "Triangulation failed or returned incomplete result."}), 400
+        # 'p' 옵션은 다각형을 삼각분할하며, 'q'는 품질을 개선합니다.
+        triangulation = tr.triangulate(polygon_data, 'pq')
+        if 'triangles' not in triangulation or 'vertices' not in triangulation:
+            return jsonify({"error": "Triangulation failed. The input shape might be too complex or invalid."}), 400
 
         tri_vertices = np.array(triangulation['vertices'], dtype=float)
         tri_idx = np.array(triangulation['triangles'], dtype=int)
-        final_pieces = [Polygon(tri_vertices[tri]) for tri in tri_idx if Polygon(tri_vertices[tri]).is_valid]
+        # 생성된 삼각형이 유효하고, 최종 공간 내부에 있는지 다시 한번 확인합니다.
+        final_pieces = [Polygon(tri_vertices[tri]) for tri in tri_idx if final_space.contains(Polygon(tri_vertices[tri]).centroid)]
 
         if not final_pieces:
-            return jsonify({"error": "No valid triangle pieces produced."}), 400
+            return jsonify({"error": "No valid triangle pieces were produced after triangulation."}), 400
 
         # --- Set Cover (guards) ---
         guard_candidates = all_vertices
@@ -133,6 +136,7 @@ def calculate_guards():
 
         for i, guard_pos in enumerate(guard_candidates):
             for k, piece in enumerate(final_pieces):
+                # 감시자가 삼각형의 모든 꼭짓점을 볼 수 있다면, 그 삼각형 전체를 볼 수 있다고 가정합니다.
                 if all(is_visible(guard_pos, v, final_space) for v in piece.exterior.coords[:-1]):
                     V[i, k] = 1
 
@@ -145,7 +149,10 @@ def calculate_guards():
             if candidate_guards_for_piece:
                 prob += pulp.lpSum(candidate_guards_for_piece) >= 1
             else:
-                return jsonify({"error": f"No guard can see triangle {k}"}), 400
+                # 이 삼각형을 볼 수 있는 감시자가 없는 경우, 에러 대신 경고를 로깅하고 계속 진행할 수 있습니다.
+                # 하지만 현재로서는 계산 실패로 처리하는 것이 명확합니다.
+                print(f"Warning: No guard candidate can see triangle {k}")
+                return jsonify({"error": f"Calculation failed: A piece of the area (triangle {k}) is not visible from any vertex."}), 400
 
         prob.solve(pulp.PULP_CBC_CMD(msg=0))
         guard_indices = [i for i in range(n_candidates) if pulp.value(x[i]) > 0.5]
@@ -156,12 +163,12 @@ def calculate_guards():
             visible_pieces = [p for k, p in enumerate(final_pieces) if V[g_idx, k] == 1]
             vision_area = unary_union(visible_pieces) if visible_pieces else None
             vision_coords = []
-            if vision_area:
+            if vision_area and not vision_area.is_empty:
                 geoms = list(vision_area.geoms) if vision_area.geom_type == "MultiPolygon" else [vision_area]
                 for geom in geoms:
                     if geom.geom_type == 'Polygon':
                         vision_coords.append(list(geom.exterior.coords))
-            guard_details.append({"position": guard_pos, "vision_area": vision_coords})
+            guard_details.append({"position": list(guard_pos), "vision_area": vision_coords})
 
         # --- final_space 배열 형태로 전송 ---
         final_space_list = []
@@ -178,7 +185,7 @@ def calculate_guards():
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": f"Calculation failed: {str(e)}"}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
