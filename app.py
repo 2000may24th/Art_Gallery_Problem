@@ -99,8 +99,8 @@ def calculate_guards():
         for poly in polygons_to_process:
             process_polygon(poly)
             for interior_ring in poly.interiors:
-                interior_poly = Polygon(interior_ring)
-                process_polygon(Polygon(interior_ring), is_hole=True)
+                hole_poly = Polygon(interior_ring).buffer(0)
+                hole_points.append(hole_poly.representative_point().coords[0])
         
         polygon_data = dict(vertices=np.array(all_vertices), segments=np.array(all_segments))
         if hole_points:
@@ -160,5 +160,6 @@ def calculate_guards():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
 
 
