@@ -155,12 +155,13 @@ def calculate_guards():
 
         return jsonify({"guards": guard_details, "final_space": final_space_coords})
 
-    except Exception:
+    except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Calculation failed due to an internal error."}), 500
+        return jsonify({"error": f"Calculation failed: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
 
 
 
