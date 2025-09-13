@@ -68,24 +68,23 @@ def calculate_guards():
         if not exterior_paths:
             return jsonify({"error": "At least one exterior space is required."}), 400
 
-        # 1) 원래 외곽(exterior)과 입력 기둥(interior) 폴리곤 생성
+        # --- exterior union ---
         exterior_polygons = []
         for p in exterior_paths:
             if len(p) < 3:
                 return jsonify({"error": "Each exterior must have at least 3 points."}), 400
             exterior_polygons.append(Polygon(p).buffer(0))
-
         total_exterior = unary_union(exterior_polygons)
 
+        # --- interior union ---
         interior_polygons = []
         for p in interior_paths:
             if len(p) < 3:
                 continue
             interior_polygons.append(Polygon(p).buffer(0))
-
         total_interior = unary_union(interior_polygons) if interior_polygons else None
 
-        # 2) final_space = exterior - interior (시야 계산용)
+        # final_space = exterior - interior
         if total_interior:
             final_space = total_exterior.difference(total_interior)
         else:
@@ -95,69 +94,57 @@ def calculate_guards():
         if final_space.is_empty:
             return jsonify({"error": "The final shape is empty."}), 400
 
-        # 3) 외곽(segments) 구성: final_space의 각 연결컴포넌트의 외곽을 segments로 추가
+        # triangulate input 준비
         all_vertices = []
         all_segments = []
         hole_points = []
 
-        def process_exterior_ring(coords):
+        def process_ring(coords):
+            """polygon의 한 ring을 vertices+segments로 추가"""
             nonlocal all_vertices, all_segments
             path = list(coords)[:-1] if coords[0] == coords[-1] else list(coords)
             if len(path) < 3:
                 return
             start_idx = len(all_vertices)
             all_vertices.extend(path)
-            path_len = len(path)
-            for i in range(path_len):
-                all_segments.append([start_idx + i, start_idx + (i + 1) % path_len])
+            for i in range(len(path)):
+                all_segments.append([start_idx + i, start_idx + (i + 1) % len(path)])
 
-        polygons_to_process = list(final_space.geoms) if final_space.geom_type == 'MultiPolygon' else [final_space]
+        # --- 외곽 처리 ---
+        for poly in (list(total_exterior.geoms) if total_exterior.geom_type == "MultiPolygon" else [total_exterior]):
+            process_ring(poly.exterior.coords)
 
-        for poly in polygons_to_process:
-            process_exterior_ring(poly.exterior.coords)
-
-        # 4) hole_points는 "원래 외곽(total_exterior) 내부"인지를 검사해서 추가해야 함.
-        #    (final_space 안에 있는지 검사하면 항상 False가 됨 => 무시되므로 잘못된 검사)
-        for hole_poly in interior_polygons:
-            try:
-                rep = hole_poly.representative_point()
-                # **핵심**: representative point가 'total_exterior' 내부에 있어야 triangle의 holes로 사용 가능
-                if total_exterior.contains(rep):
-                    hole_points.append((rep.x, rep.y))
-                else:
-                    # fallback: centroid가 total_exterior 안에 있으면 centroid 사용
-                    c = hole_poly.centroid
-                    if total_exterior.contains(c):
-                        hole_points.append((c.x, c.y))
-                    else:
-                        app.logger.debug("Ignored hole whose representative point / centroid not inside total_exterior.")
-            except Exception:
-                app.logger.debug("Failed to generate representative point for a hole; ignoring it.")
+        # --- 기둥 처리 (segment + hole point) ---
+        for p in interior_paths:
+            if len(p) < 3:
                 continue
+            hole_poly = Polygon(p).buffer(0)
+            if not total_exterior.contains(hole_poly):
+                continue
+            # 기둥 경계도 triangulation에 포함
+            process_ring(hole_poly.exterior.coords)
+            # triangulation용 hole representative point
+            rep = hole_poly.representative_point()
+            hole_points.append((rep.x, rep.y))
 
-        # 5) triangle 입력 준비
         if not all_vertices or not all_segments:
-            return jsonify({"error": "Invalid polygon: no exterior vertices or segments found."}), 400
+            return jsonify({"error": "Invalid polygon: no vertices or segments found."}), 400
 
         polygon_data = {
-            'vertices': np.array(all_vertices, dtype=float),
-            'segments': np.array(all_segments, dtype=int)
+            "vertices": np.array(all_vertices, dtype=float),
+            "segments": np.array(all_segments, dtype=int),
         }
         if hole_points:
-            polygon_data['holes'] = np.array(hole_points, dtype=float)
+            polygon_data["holes"] = np.array(hole_points, dtype=float)
 
-        # 6) triangulate
+        # --- triangulate ---
         try:
-            triangulation = tr.triangulate(polygon_data, 'p')
+            triangulation = tr.triangulate(polygon_data, "p")
         except Exception as e:
             traceback.print_exc()
-            return jsonify({"error": f"Triangulation threw exception: {str(e)}", "triangle_input": {
-                "n_vertices": len(all_vertices),
-                "n_segments": len(all_segments),
-                "n_holes": len(hole_points)
-            }}), 500
+            return jsonify({"error": f"Triangulation threw exception: {str(e)}"}), 500
 
-        if not triangulation or 'triangles' not in triangulation or 'vertices' not in triangulation:
+        if not triangulation or "triangles" not in triangulation or "vertices" not in triangulation:
             keys = list(triangulation.keys()) if triangulation else []
             return jsonify({
                 "error": "Triangulation failed or returned incomplete result.",
@@ -165,13 +152,13 @@ def calculate_guards():
                 "triangle_input_summary": {
                     "n_vertices": len(all_vertices),
                     "n_segments": len(all_segments),
-                    "n_holes": len(hole_points)
+                    "n_holes": len(hole_points),
                 }
             }), 400
 
-        # 7) 삼각형 조합 -> final_pieces
-        tri_vertices = np.array(triangulation['vertices'], dtype=float)
-        tri_idx = np.array(triangulation['triangles'], dtype=int)
+        # --- 삼각형 조각 만들기 ---
+        tri_vertices = np.array(triangulation["vertices"], dtype=float)
+        tri_idx = np.array(triangulation["triangles"], dtype=int)
         final_pieces = []
         for tri in tri_idx:
             try:
@@ -180,10 +167,10 @@ def calculate_guards():
             except Exception:
                 continue
 
-        if len(final_pieces) == 0:
-            return jsonify({"error": "No valid triangle pieces produced by triangulation."}), 400
+        if not final_pieces:
+            return jsonify({"error": "No valid triangle pieces produced."}), 400
 
-        # 8) guard candidate, visibility matrix 등 기존 로직 그대로
+        # --- guard 후보: 외곽 vertex들 ---
         guard_candidates = all_vertices
         n_candidates = len(guard_candidates)
         num_pieces = len(final_pieces)
@@ -197,17 +184,17 @@ def calculate_guards():
                 except Exception:
                     V[i, k] = 0
 
+        # set cover 문제 설정
         x = pulp.LpVariable.dicts("x", range(n_candidates), cat="Binary")
         prob = pulp.LpProblem("SetCover", pulp.LpMinimize)
         prob += pulp.lpSum([x[i] for i in range(n_candidates)])
 
         for k in range(num_pieces):
-            candidate_guards_for_piece = [x[i] for i in range(n_candidates) if V[i, k] == 1]
-            if candidate_guards_for_piece:
-                prob += pulp.lpSum(candidate_guards_for_piece) >= 1
+            cand = [x[i] for i in range(n_candidates) if V[i, k] == 1]
+            if cand:
+                prob += pulp.lpSum(cand) >= 1
             else:
-                app.logger.debug(f"No guard candidate covers triangle {k}.")
-                return jsonify({"error": f"No guard candidate can see triangle {k}. Possibly geometry issue."}), 400
+                return jsonify({"error": f"No guard candidate can see triangle {k}."}), 400
 
         try:
             solver = pulp.PULP_CBC_CMD(msg=0)
@@ -216,11 +203,8 @@ def calculate_guards():
             traceback.print_exc()
             return jsonify({"error": f"Solver failed: {str(e)}"}), 500
 
-        if pulp.value(prob.objective) is None:
-            return jsonify({"error": "Solver returned no solution."}), 500
-
         guard_indices = [i for i in range(n_candidates) if pulp.value(x[i]) is not None and pulp.value(x[i]) > 0.5]
-
+        
         guard_details = []
         for g_idx in guard_indices:
             guard_pos = guard_candidates[g_idx]
@@ -229,25 +213,24 @@ def calculate_guards():
 
             vision_coords = []
             if vision_area:
-                geoms = list(vision_area.geoms) if vision_area.geom_type == 'MultiPolygon' else [vision_area]
+                geoms = list(vision_area.geoms) if vision_area.geom_type == "MultiPolygon" else [vision_area]
                 for geom in geoms:
-                    if geom.geom_type == 'Polygon':
+                    if geom.geom_type == "Polygon":
                         vision_coords.append(list(geom.exterior.coords))
 
             guard_details.append({"position": guard_pos, "vision_area": vision_coords})
 
-        final_space_coords = []
-        for poly in polygons_to_process:
-            final_space_coords.append({
-                "exterior": list(poly.exterior.coords),
-                "interiors": [list(i.coords) for i in poly.interiors]
-            })
-
-        return jsonify({"guards": guard_details, "final_space": final_space_coords})
+        return jsonify({
+            "guards": guard_details,
+            "final_space": {
+                "exteriors": [list(poly.exterior.coords) for poly in (list(final_space.geoms) if final_space.geom_type == "MultiPolygon" else [final_space])],
+                "interiors": [list(h.exterior.coords) for h in interior_polygons] if interior_polygons else []
+            }
+        })
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Calculation failed: {str(e)}"}), 500
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True, port=5000)
