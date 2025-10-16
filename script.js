@@ -131,7 +131,7 @@ calculateBtn.addEventListener('click', async () => {
     // 현재 그리고 있는 경로가 있으면 자동으로 확정
     if (currentPath.length >= 3) finishPathBtn.click();
 
-    statusElem.textContent = "계산 중... 복잡한 도형은 시간이 걸릴 수 있습니다.";
+    statusElem.textContent = "계산 모델 서버가 로드되기까지 최대 1분의 시간이 걸릴 수 있습니다.";
     try {
         const response = await fetch(`${BACKEND_URL}/calculate`, {
             method: 'POST',
@@ -203,6 +203,7 @@ function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) { /* 이전�
     ctx.fillStyle = color; ctx.fill();
 
 }
+
 
 
 
